@@ -75,13 +75,40 @@ jobs:
       - name: Atualizar dashboard
         shell: bash
         run: |
-          if [ -n "${{ inputs.start }}" ] || [ -n "${{ inputs.end }}" ]; then
-            python export_reportei_dashboard.py \
-              --start "${{ inputs.start }}" \
-              --end "${{ inputs.end }}"
-          else
-            python export_reportei_dashboard.py \
-              --period "${{ inputs.period || 'current_month_until_yesterday' }}"
+          failed_networks=()
+          success_count=0
+          network_list="${REPORTEI_DASHBOARD_NETWORKS//,/ }"
+
+          for network in $network_list; do
+            echo "::group::Atualizar rede: $network"
+            if [ -n "${{ inputs.start }}" ] || [ -n "${{ inputs.end }}" ]; then
+              python export_reportei_dashboard.py \
+                --start "${{ inputs.start }}" \
+                --end "${{ inputs.end }}" \
+                --networks "$network"
+            else
+              python export_reportei_dashboard.py \
+                --period "${{ inputs.period || 'current_month_until_yesterday' }}" \
+                --networks "$network"
+            fi
+            status=$?
+            echo "::endgroup::"
+
+            if [ "$status" -eq 0 ]; then
+              success_count=$((success_count + 1))
+            else
+              failed_networks+=("$network")
+              echo "::warning::Rede $network falhou com exit code $status. As demais redes continuam."
+            fi
+          done
+
+          if [ "${#failed_networks[@]}" -gt 0 ]; then
+            echo "Redes com falha: ${failed_networks[*]}"
+          fi
+
+          if [ "$success_count" -eq 0 ]; then
+            echo "Nenhuma rede foi atualizada com sucesso."
+            exit 1
           fi
 
       - name: Publicar historicos da execucao
