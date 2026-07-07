@@ -1,0 +1,83 @@
+name: Atualizar Dashboard Reportei
+
+on:
+  workflow_dispatch:
+    inputs:
+      period:
+        description: "Periodo automatico"
+        required: true
+        default: "current_month_until_yesterday"
+        type: choice
+        options:
+          - current_month_until_yesterday
+          - previous_month
+          - last_7_days
+          - last_30_days
+      start:
+        description: "Data inicial opcional (DD/MM/YYYY ou YYYY-MM-DD)"
+        required: false
+        default: ""
+      end:
+        description: "Data final opcional (DD/MM/YYYY ou YYYY-MM-DD)"
+        required: false
+        default: ""
+
+  schedule:
+    # 09:30 UTC = 06:30 em Sao Paulo.
+    - cron: "30 9 * * *"
+
+jobs:
+  update-dashboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      REPORTEI_TOKEN: ${{ secrets.REPORTEI_TOKEN }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      GOOGLE_SPREADSHEET_ID: ${{ secrets.GOOGLE_SPREADSHEET_ID }}
+      GOOGLE_WORKSHEET_NAME: Base
+      REPORTEI_DASHBOARD_MODE: update_values
+      REPORTEI_DASHBOARD_NETWORKS: facebook,instagram_business,linkedin,tiktok,youtube
+      PYTHONIOENCODING: utf-8
+
+    steps:
+      - name: Baixar codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Instalar dependencias
+        run: python -m pip install -r requirements.txt
+
+      - name: Validar secrets obrigatorios
+        shell: bash
+        run: |
+          test -n "$REPORTEI_TOKEN" || (echo "REPORTEI_TOKEN ausente" && exit 1)
+          test -n "$GOOGLE_SERVICE_ACCOUNT_JSON" || (echo "GOOGLE_SERVICE_ACCOUNT_JSON ausente" && exit 1)
+          test -n "$GOOGLE_SPREADSHEET_ID" || (echo "GOOGLE_SPREADSHEET_ID ausente" && exit 1)
+
+      - name: Atualizar dashboard
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.start }}" ] || [ -n "${{ inputs.end }}" ]; then
+            python export_reportei_dashboard.py \
+              --start "${{ inputs.start }}" \
+              --end "${{ inputs.end }}"
+          else
+            python export_reportei_dashboard.py \
+              --period "${{ inputs.period || 'current_month_until_yesterday' }}"
+          fi
+
+      - name: Publicar historicos da execucao
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reportei-dashboard-history
+          path: |
+            reportei_dashboard_run_history.csv
+            reportei_dashboard_block_history.csv
+          if-no-files-found: ignore
