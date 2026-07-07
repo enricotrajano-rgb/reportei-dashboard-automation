@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import time
 from pathlib import Path
 
 import requests
@@ -8,6 +9,8 @@ from dotenv import load_dotenv
 
 
 BASE_URL = "https://app.reportei.com/api/v2"
+MAX_RETRY_ATTEMPTS = 6
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class ReporteiClient:
@@ -27,25 +30,51 @@ class ReporteiClient:
 
     def _request(self, method, path, params=None, json_body=None):
         url = f"{self.base_url}/{path.lstrip('/')}"
-        response = self.session.request(
-            method=method,
-            url=url,
-            params=params,
-            json=json_body,
-            timeout=self.timeout,
-        )
-        try:
-            response.raise_for_status()
-        except requests.HTTPError as exc:
-            error_body = response.text
+        last_response = None
+        for attempt in range(1, MAX_RETRY_ATTEMPTS + 1):
+            response = self.session.request(
+                method=method,
+                url=url,
+                params=params,
+                json=json_body,
+                timeout=self.timeout,
+            )
+            last_response = response
+            if (
+                response.status_code in RETRYABLE_STATUS_CODES
+                and attempt < MAX_RETRY_ATTEMPTS
+            ):
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    wait_seconds = int(retry_after) if retry_after else 0
+                except ValueError:
+                    wait_seconds = 0
+                if wait_seconds <= 0:
+                    wait_seconds = 20 * attempt
+                print(
+                    f"Reportei {response.status_code} em {path}; "
+                    f"tentando novamente em {wait_seconds}s "
+                    f"({attempt}/{MAX_RETRY_ATTEMPTS})."
+                )
+                time.sleep(wait_seconds)
+                continue
             try:
-                error_body = json.dumps(response.json(), ensure_ascii=False)
-            except ValueError:
-                pass
-            raise RuntimeError(
-                f"Erro na API Reportei ({response.status_code}) em {path}: {error_body}"
-            ) from exc
-        return response.json()
+                response.raise_for_status()
+            except requests.HTTPError as exc:
+                error_body = response.text
+                try:
+                    error_body = json.dumps(response.json(), ensure_ascii=False)
+                except ValueError:
+                    pass
+                raise RuntimeError(
+                    f"Erro na API Reportei ({response.status_code}) em {path}: {error_body}"
+                ) from exc
+            return response.json()
+
+        raise RuntimeError(
+            f"Falha ao acessar API Reportei em {path}: "
+            f"status {last_response.status_code if last_response else 'desconhecido'}"
+        )
 
     def get_company_settings(self):
         return self._request("GET", "/companies/settings")
