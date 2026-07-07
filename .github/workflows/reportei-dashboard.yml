@@ -26,6 +26,10 @@ on:
     # 09:30 UTC = 06:30 em Sao Paulo.
     - cron: "30 9 * * *"
 
+concurrency:
+  group: reportei-dashboard-update
+  cancel-in-progress: false
+
 jobs:
   update-dashboard:
     runs-on: ubuntu-latest
