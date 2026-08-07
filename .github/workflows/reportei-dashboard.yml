@@ -40,8 +40,10 @@ jobs:
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
       GOOGLE_SPREADSHEET_ID: ${{ secrets.GOOGLE_SPREADSHEET_ID }}
       GOOGLE_WORKSHEET_NAME: Base
+      REPORTEI_TOP_POSTS_WORKSHEET_NAME: Top Posts
       REPORTEI_DASHBOARD_MODE: update_values
       REPORTEI_DASHBOARD_NETWORKS: facebook,instagram_business,linkedin,tiktok,youtube
+      REPORTEI_TOP_POSTS_NETWORKS: facebook,instagram_business
       PYTHONIOENCODING: utf-8
 
     steps:
@@ -109,6 +111,18 @@ jobs:
           if [ "$success_count" -eq 0 ]; then
             echo "Nenhuma rede foi atualizada com sucesso."
             exit 1
+          fi
+
+      - name: Atualizar top posts
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.start }}" ] || [ -n "${{ inputs.end }}" ]; then
+            python Top_Posts.py \
+              --start "${{ inputs.start }}" \
+              --end "${{ inputs.end }}"
+          else
+            python Top_Posts.py \
+              --period "${{ inputs.period || 'current_month_until_yesterday' }}"
           fi
 
       - name: Publicar historicos da execucao
