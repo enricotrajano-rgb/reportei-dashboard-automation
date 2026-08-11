@@ -156,6 +156,17 @@ def build_parser():
         help="Nao atualiza Google Sheets.",
     )
     parser.add_argument(
+        "--repair-existing-types",
+        action="store_true",
+        default=os.getenv("REPORTEI_TOP_POSTS_REPAIR_EXISTING_TYPES", "false").lower() == "true",
+        help="Converte linhas existentes da aba para data/numeros reais. Use apenas como reparo pontual.",
+    )
+    parser.add_argument(
+        "--repair-types-only",
+        action="store_true",
+        help="Apenas repara os tipos da aba existente, sem consultar a API do Reportei.",
+    )
+    parser.add_argument(
         "--cache-dir",
         default=os.getenv("REPORTEI_CACHE_DIR", DEFAULT_CACHE_DIR),
         help="Pasta de cache.",
@@ -445,6 +456,9 @@ def format_post_date(value):
 
 
 def parse_sheet_date(value):
+    if isinstance(value, (int, float)):
+        base_date = datetime(1899, 12, 30).date()
+        return base_date + timedelta(days=int(value))
     text = str(value or "").strip()
     for date_format in ("%d/%m/%Y", "%Y-%m-%d"):
         try:
@@ -806,11 +820,12 @@ def clear_google_sheet_values(spreadsheets, spreadsheet_id, worksheet_name):
 
 def sheet_values_to_rows(values):
     rows = []
-    for values_row in values[1:]:
+    for row_number, values_row in enumerate(values[1:], start=2):
         row = {}
         for index, field_name in enumerate(OUTPUT_FIELDNAMES):
             row[field_name] = values_row[index] if index < len(values_row) else ""
         if any(str(value).strip() for value in row.values()):
+            row["_row_number"] = row_number
             rows.append(row)
     return rows
 
@@ -836,17 +851,7 @@ def row_in_period(row, start_iso, end_iso):
 
 
 def sort_sheet_rows(rows):
-    return sorted(
-        rows,
-        key=lambda row: (
-            parse_sheet_date(row.get("Data")) or datetime.max.date(),
-            str(row.get("Produto", "")).lower(),
-            str(row.get("Rede", "")).lower(),
-            -to_number(row.get("Visualizacoes")),
-            -to_number(row.get("Engajamento")),
-            str(row.get("Link", "")).lower(),
-        ),
-    )
+    return sorted(rows, key=row_sort_tuple)
 
 
 def merge_historical_rows(existing_rows, new_rows, start_iso, end_iso):
@@ -861,8 +866,63 @@ def merge_historical_rows(existing_rows, new_rows, start_iso, end_iso):
 def rows_to_sheet_values(rows):
     values = [OUTPUT_FIELDNAMES]
     for row in rows:
-        values.append([row.get(field_name, "") for field_name in OUTPUT_FIELDNAMES])
+        values.append([sheet_cell_value(row, field_name) for field_name in OUTPUT_FIELDNAMES])
     return values
+
+
+def row_to_sheet_values(row):
+    return [sheet_cell_value(row, field_name) for field_name in OUTPUT_FIELDNAMES]
+
+
+def sheet_cell_value(row, field_name):
+    value = row.get(field_name, "")
+    if field_name == "Data":
+        row_date = parse_sheet_date(value)
+        if row_date is None:
+            return value
+        return (row_date - datetime(1899, 12, 30).date()).days
+    if field_name in ("Visualizacoes", "Engajamento"):
+        return to_number(value)
+    return value
+
+
+def remove_internal_fields(row):
+    return {field_name: row.get(field_name, "") for field_name in OUTPUT_FIELDNAMES}
+
+
+def group_contiguous_numbers(numbers):
+    groups = []
+    sorted_numbers = sorted(numbers)
+    if not sorted_numbers:
+        return groups
+    start = previous = sorted_numbers[0]
+    for number in sorted_numbers[1:]:
+        if number == previous + 1:
+            previous = number
+            continue
+        groups.append((start, previous))
+        start = previous = number
+    groups.append((start, previous))
+    return groups
+
+
+def find_insert_row_number(rows_to_keep, new_rows):
+    if not new_rows:
+        return None
+    first_new_key = row_sort_tuple(sort_sheet_rows(new_rows)[0])
+    rows_before = sum(1 for row in rows_to_keep if row_sort_tuple(row) < first_new_key)
+    return 2 + rows_before
+
+
+def row_sort_tuple(row):
+    return (
+        parse_sheet_date(row.get("Data")) or datetime.max.date(),
+        str(row.get("Produto", "")).lower(),
+        str(row.get("Rede", "")).lower(),
+        -to_number(row.get("Visualizacoes")),
+        -to_number(row.get("Engajamento")),
+        str(row.get("Link", "")).lower(),
+    )
 
 
 def format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, row_count):
@@ -886,6 +946,23 @@ def format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, row_count):
                     }
                 },
                 "fields": "userEnteredFormat(backgroundColor,textFormat)",
+            }
+        },
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": worksheet_id,
+                    "startRowIndex": 1,
+                    "endRowIndex": max(row_count, 2),
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 1,
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "numberFormat": {"type": "DATE", "pattern": "dd/mm/yyyy"}
+                    }
+                },
+                "fields": "userEnteredFormat.numberFormat",
             }
         },
         {
@@ -925,7 +1002,108 @@ def format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, row_count):
     )
 
 
-def write_google_sheet(spreadsheet_id, worksheet_name, service_account_file, rows, start_iso, end_iso):
+def delete_period_rows(spreadsheets, spreadsheet_id, worksheet_id, existing_rows, start_iso, end_iso):
+    period_row_numbers = [
+        row["_row_number"]
+        for row in existing_rows
+        if row.get("_row_number") and row_in_period(row, start_iso, end_iso)
+    ]
+    groups = group_contiguous_numbers(period_row_numbers)
+    if not groups:
+        return 0
+
+    requests = []
+    for start_row, end_row in reversed(groups):
+        requests.append(
+            {
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": worksheet_id,
+                        "dimension": "ROWS",
+                        "startIndex": start_row - 1,
+                        "endIndex": end_row,
+                    }
+                }
+            }
+        )
+    execute_google_request_with_backoff(
+        lambda: spreadsheets.batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={"requests": requests},
+        ),
+        "Remocao de linhas do periodo no Google Sheets",
+    )
+    return len(period_row_numbers)
+
+
+def insert_period_rows(spreadsheets, spreadsheet_id, worksheet_id, worksheet_name, insert_row_number, rows):
+    if not rows:
+        return
+
+    row_count = len(rows)
+    insert_index = max(insert_row_number - 1, 1)
+    execute_google_request_with_backoff(
+        lambda: spreadsheets.batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body={
+                "requests": [
+                    {
+                        "insertDimension": {
+                            "range": {
+                                "sheetId": worksheet_id,
+                                "dimension": "ROWS",
+                                "startIndex": insert_index,
+                                "endIndex": insert_index + row_count,
+                            },
+                            "inheritFromBefore": insert_index > 1,
+                        }
+                    }
+                ]
+            },
+        ),
+        "Insercao de linhas do periodo no Google Sheets",
+    )
+    execute_google_request_with_backoff(
+        lambda: spreadsheets.values().update(
+            spreadsheetId=spreadsheet_id,
+            range=sheet_range(worksheet_name, f"A{insert_row_number}:F{insert_row_number + row_count - 1}"),
+            valueInputOption="USER_ENTERED",
+            body={"values": [row_to_sheet_values(row) for row in rows]},
+        ),
+        "Escrita do periodo no Google Sheets",
+    )
+
+
+def repair_existing_sheet_types(spreadsheets, spreadsheet_id, worksheet_name):
+    all_rows = read_google_sheet_rows(spreadsheets, spreadsheet_id, worksheet_name)
+    if not all_rows:
+        return 0
+    execute_google_request_with_backoff(
+        lambda: spreadsheets.values().update(
+            spreadsheetId=spreadsheet_id,
+            range=sheet_range(worksheet_name, f"A2:F{len(all_rows) + 1}"),
+            valueInputOption="USER_ENTERED",
+            body={
+                "values": [
+                    row_to_sheet_values(remove_internal_fields(row))
+                    for row in all_rows
+                ]
+            },
+        ),
+        "Reparo de tipos existentes no Google Sheets",
+    )
+    return len(all_rows)
+
+
+def write_google_sheet(
+    spreadsheet_id,
+    worksheet_name,
+    service_account_file,
+    rows,
+    start_iso,
+    end_iso,
+    repair_existing_types=False,
+):
     spreadsheets = create_google_sheets_client(service_account_file)
     worksheet_id = ensure_google_worksheet(
         spreadsheets,
@@ -934,24 +1112,62 @@ def write_google_sheet(spreadsheet_id, worksheet_name, service_account_file, row
         min_rows=len(rows) + 1,
     )
     existing_rows = read_google_sheet_rows(spreadsheets, spreadsheet_id, worksheet_name)
-    final_rows = merge_historical_rows(existing_rows, rows, start_iso, end_iso)
-    clear_google_sheet_values(spreadsheets, spreadsheet_id, worksheet_name)
-    execute_google_request_with_backoff(
-        lambda: spreadsheets.values().update(
-            spreadsheetId=spreadsheet_id,
-            range=sheet_range(worksheet_name, "A1"),
-            valueInputOption="RAW",
-            body={"values": rows_to_sheet_values(final_rows)},
-        ),
-        "Escrita Google Sheets",
+    rows_to_keep = [
+        row
+        for row in existing_rows
+        if not row_in_period(row, start_iso, end_iso)
+    ]
+    new_rows = sort_sheet_rows([remove_internal_fields(row) for row in rows])
+    insert_row_number = find_insert_row_number(rows_to_keep, new_rows)
+    replaced_count = delete_period_rows(
+        spreadsheets,
+        spreadsheet_id,
+        worksheet_id,
+        existing_rows,
+        start_iso,
+        end_iso,
     )
-    format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, len(final_rows) + 1)
+    if insert_row_number is not None:
+        insert_period_rows(
+            spreadsheets,
+            spreadsheet_id,
+            worksheet_id,
+            worksheet_name,
+            insert_row_number,
+            new_rows,
+        )
+    final_count = len(rows_to_keep) + len(new_rows)
+    repaired_count = 0
+    if repair_existing_types:
+        repaired_count = repair_existing_sheet_types(
+            spreadsheets,
+            spreadsheet_id,
+            worksheet_name,
+        )
+    format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, final_count + 1)
     return {
         "existing": len(existing_rows),
-        "replaced": sum(1 for row in existing_rows if row_in_period(row, start_iso, end_iso)),
+        "replaced": replaced_count,
         "written": len(rows),
-        "final": len(final_rows),
+        "final": final_count,
+        "repaired": repaired_count,
     }
+
+
+def repair_types_only(spreadsheet_id, worksheet_name, service_account_file):
+    spreadsheets = create_google_sheets_client(service_account_file)
+    worksheet_id = ensure_google_worksheet(
+        spreadsheets,
+        spreadsheet_id,
+        worksheet_name,
+    )
+    repaired_count = repair_existing_sheet_types(
+        spreadsheets,
+        spreadsheet_id,
+        worksheet_name,
+    )
+    format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, repaired_count + 1)
+    return repaired_count
 
 
 def main():
@@ -960,6 +1176,18 @@ def main():
     start_iso, end_iso = resolve_period_dates(args.period, args.start, args.end)
     networks = ordered_networks(args.networks)
     cache_config = make_cache_config(args)
+
+    if args.repair_types_only:
+        repaired_count = repair_types_only(
+            args.spreadsheet_id,
+            args.worksheet_name,
+            args.service_account_file,
+        )
+        print(f"Google Sheet reparada: {args.spreadsheet_id} / {args.worksheet_name}")
+        print(f"Tipos reparados: {repaired_count} linha(s).")
+        print(f"Tempo total: {int(time.time() - started_at)}s")
+        return
+
     client = get_client()
 
     projects = filter_projects(
@@ -994,6 +1222,7 @@ def main():
             rows,
             start_iso,
             end_iso,
+            repair_existing_types=args.repair_existing_types,
         )
         print(f"Google Sheet atualizada: {args.spreadsheet_id} / {args.worksheet_name}")
         print(
@@ -1001,6 +1230,12 @@ def main():
             f"{write_result['final']} linha(s) finais; "
             f"{write_result['replaced']} linha(s) substituida(s) no periodo."
         )
+        if write_result["repaired"]:
+            print(
+                "Tipos reparados: "
+                f"{write_result['repaired']} linha(s) existentes convertida(s) "
+                "para data/numeros reais."
+            )
 
     print(f"Linhas finais: {len(rows)}")
     print(f"Tempo total: {int(time.time() - started_at)}s")
