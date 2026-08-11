@@ -39,7 +39,7 @@ GOOGLE_SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 OUTPUT_FIELDNAMES = [
     "Data",
     "Produto",
-    "Rede",
+    "Redes",
     "Link",
     "Visualizacoes",
     "Engajamento",
@@ -724,7 +724,7 @@ def write_csv(output_path, rows):
     with output_path.open("w", encoding="utf-8-sig", newline="") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=OUTPUT_FIELDNAMES)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(output_row(row) for row in rows)
 
 
 def create_google_sheets_client(service_account_file):
@@ -823,7 +823,10 @@ def sheet_values_to_rows(values):
     for row_number, values_row in enumerate(values[1:], start=2):
         row = {}
         for index, field_name in enumerate(OUTPUT_FIELDNAMES):
-            row[field_name] = values_row[index] if index < len(values_row) else ""
+            value = values_row[index] if index < len(values_row) else ""
+            row[field_name] = value
+            if field_name == "Redes":
+                row["Rede"] = value
         if any(str(value).strip() for value in row.values()):
             row["_row_number"] = row_number
             rows.append(row)
@@ -876,6 +879,8 @@ def row_to_sheet_values(row):
 
 def sheet_cell_value(row, field_name):
     value = row.get(field_name, "")
+    if field_name == "Redes":
+        return row.get("Redes", row.get("Rede", ""))
     if field_name == "Data":
         row_date = parse_sheet_date(value)
         if row_date is None:
@@ -887,7 +892,19 @@ def sheet_cell_value(row, field_name):
 
 
 def remove_internal_fields(row):
-    return {field_name: row.get(field_name, "") for field_name in OUTPUT_FIELDNAMES}
+    cleaned = output_row(row)
+    cleaned["Rede"] = cleaned["Redes"]
+    return cleaned
+
+
+def output_row(row):
+    output = {}
+    for field_name in OUTPUT_FIELDNAMES:
+        if field_name == "Redes":
+            output[field_name] = row.get("Redes", row.get("Rede", ""))
+        else:
+            output[field_name] = row.get(field_name, "")
+    return output
 
 
 def group_contiguous_numbers(numbers):
@@ -918,7 +935,7 @@ def row_sort_tuple(row):
     return (
         parse_sheet_date(row.get("Data")) or datetime.max.date(),
         str(row.get("Produto", "")).lower(),
-        str(row.get("Rede", "")).lower(),
+        str(row.get("Rede", row.get("Redes", ""))).lower(),
         -to_number(row.get("Visualizacoes")),
         -to_number(row.get("Engajamento")),
         str(row.get("Link", "")).lower(),
