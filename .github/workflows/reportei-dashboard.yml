@@ -43,7 +43,9 @@ jobs:
       REPORTEI_TOP_POSTS_WORKSHEET_NAME: Top Posts
       REPORTEI_DASHBOARD_MODE: update_values
       REPORTEI_DASHBOARD_NETWORKS: facebook,instagram_business,linkedin,tiktok,youtube
+      REPORTEI_DASHBOARD_EXCLUDE_PROJECTS: Agro Agenda
       REPORTEI_TOP_POSTS_NETWORKS: facebook,instagram_business
+      REPORTEI_TOP_POSTS_EXCLUDE_PROJECTS: Agro Agenda
       RUN_TOP_POSTS: "false"
       PYTHONIOENCODING: utf-8
 
