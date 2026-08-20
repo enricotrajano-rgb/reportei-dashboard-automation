@@ -25,9 +25,9 @@ DEFAULT_SAVE_CSV = False
 DEFAULT_GOOGLE_SPREADSHEET_ID = "11hFk76IZe1AnCD3lsq6N95hclSZjIdgrkbmI0GWVCrI"
 DEFAULT_GOOGLE_WORKSHEET_NAME = "Top Posts"
 DEFAULT_GOOGLE_SERVICE_ACCOUNT_FILE = r"c:\Users\Enrico.Trajano\Downloads\clear-rock-498913-e3-70c12ea73e76.json"
+DEFAULT_TOP_PER_PRODUCT_NETWORK = 5
 DEFAULT_CACHE_DIR = ".reportei_cache"
 DEFAULT_CACHE_TTL_HOURS = 24
-DEFAULT_TOP_PER_PRODUCT_NETWORK = 5
 
 RETRY_ATTEMPTS = 4
 RETRY_DELAY_SECONDS = 3
@@ -39,44 +39,99 @@ GOOGLE_SHEETS_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 OUTPUT_FIELDNAMES = [
     "Data",
     "Produto",
-    "Redes",
+    "Rede",
     "Link",
     "Visualizacoes",
-    "Engajamento",
+    "Curtidas",
+    "Comentarios",
+    "Compartilhamentos",
+    "Salvos",
+    "Reposts",
+]
+SHEET_COLUMN_RANGE = "A:J"
+NUMERIC_FIELDNAMES = {
+    "Visualizacoes",
+    "Curtidas",
+    "Comentarios",
+    "Compartilhamentos",
+    "Salvos",
+    "Reposts",
+}
+RANKING_ENGAGEMENT_FIELDNAMES = [
+    "Curtidas",
+    "Comentarios",
+    "Compartilhamentos",
+    "Salvos",
+    "Reposts",
 ]
 
 NETWORKS = {
     "facebook": "Facebook",
     "instagram_business": "Instagram",
 }
+NETWORK_ORDER = ["facebook", "instagram_business"]
 
-NETWORK_ORDER = [
-    "facebook",
-    "instagram_business",
-]
-
-# Facebook: a tabela de posts do Reportei chama total_reach de "Visualizadores".
-# Usamos fb:page_posts porque ela traz fotos e reels com link na mesma base.
+# Facebook entrega reacoes totais por post, nao curtidas puras.
+# Instagram aceita reposts por post quando a metrica e enviada no request da datatable.
 POST_TABLES = {
     "facebook": [
         {
             "reference_key": "fb:page_posts",
+            "metrics": [
+                "type",
+                "total_reach",
+                "total_reactions",
+                "comments",
+                "shares",
+                "created_at",
+            ],
             "visualizacoes": "total_reach",
-            "engajamento_sum": ["total_reactions", "comments", "shares"],
+            "curtidas": "total_reactions",
+            "comentarios": "comments",
+            "compartilhamentos": "shares",
             "data": "created_at",
-        },
+        }
     ],
     "instagram_business": [
         {
             "reference_key": "ig:media_datatable",
+            "metrics": [
+                "type",
+                "reach",
+                "views",
+                "likes",
+                "comments",
+                "shares",
+                "saved",
+                "reposts",
+                "created_at",
+            ],
             "visualizacoes": "views",
-            "engajamento": "total_interactions",
+            "curtidas": "likes",
+            "comentarios": "comments",
+            "compartilhamentos": "shares",
+            "salvos": "saved",
+            "reposts": "reposts",
             "data": "created_at",
         },
         {
             "reference_key": "ig:reels_datatable",
+            "metrics": [
+                "reach",
+                "views",
+                "likes",
+                "comments",
+                "shares",
+                "saved",
+                "reposts",
+                "created_at",
+            ],
             "visualizacoes": "views",
-            "engajamento": "total_interactions",
+            "curtidas": "likes",
+            "comentarios": "comments",
+            "compartilhamentos": "shares",
+            "salvos": "saved",
+            "reposts": "reposts",
             "data": "created_at",
         },
     ],
@@ -85,7 +140,7 @@ POST_TABLES = {
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Gera uma base simples de top posts para Looker Studio."
+        description="Gera a base de top posts para Looker Studio."
     )
     parser.add_argument(
         "--start",
@@ -100,7 +155,13 @@ def build_parser():
     parser.add_argument(
         "--period",
         default=os.getenv("REPORTEI_TOP_POSTS_PERIOD", DEFAULT_PERIOD),
-        choices=["", "current_month_until_yesterday", "previous_month", "last_7_days", "last_30_days"],
+        choices=[
+            "",
+            "current_month_until_yesterday",
+            "previous_month",
+            "last_7_days",
+            "last_30_days",
+        ],
         help="Periodo automatico. Se informado, ignora --start/--end.",
     )
     parser.add_argument(
@@ -121,8 +182,13 @@ def build_parser():
     parser.add_argument(
         "--top-per-product-network",
         type=int,
-        default=int(os.getenv("REPORTEI_TOP_POSTS_PER_PRODUCT_NETWORK", DEFAULT_TOP_PER_PRODUCT_NETWORK)),
-        help="Quantidade maxima de posts por combinacao Produto + Rede. 0 = sem limite.",
+        default=int(
+            os.getenv(
+                "REPORTEI_TOP_POSTS_PER_PRODUCT_NETWORK",
+                DEFAULT_TOP_PER_PRODUCT_NETWORK,
+            )
+        ),
+        help="Quantidade maxima por Produto + Rede. 0 = sem limite.",
     )
     parser.add_argument(
         "--output",
@@ -132,7 +198,8 @@ def build_parser():
     parser.add_argument(
         "--save-csv",
         action=argparse.BooleanOptionalAction,
-        default=os.getenv("REPORTEI_TOP_POSTS_SAVE_CSV", str(DEFAULT_SAVE_CSV)).lower() == "true",
+        default=os.getenv("REPORTEI_TOP_POSTS_SAVE_CSV", str(DEFAULT_SAVE_CSV)).lower()
+        == "true",
         help="Tambem salva CSV local.",
     )
     parser.add_argument(
@@ -142,7 +209,10 @@ def build_parser():
     )
     parser.add_argument(
         "--worksheet-name",
-        default=os.getenv("REPORTEI_TOP_POSTS_WORKSHEET_NAME", os.getenv("GOOGLE_TOP_POSTS_WORKSHEET_NAME", DEFAULT_GOOGLE_WORKSHEET_NAME)),
+        default=os.getenv(
+            "REPORTEI_TOP_POSTS_WORKSHEET_NAME",
+            os.getenv("GOOGLE_TOP_POSTS_WORKSHEET_NAME", DEFAULT_GOOGLE_WORKSHEET_NAME),
+        ),
         help="Nome da aba de destino.",
     )
     parser.add_argument(
@@ -150,45 +220,53 @@ def build_parser():
         default=os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", DEFAULT_GOOGLE_SERVICE_ACCOUNT_FILE),
         help="Arquivo JSON da service account.",
     )
-    parser.add_argument(
-        "--no-google",
-        action="store_true",
-        help="Nao atualiza Google Sheets.",
-    )
+    parser.add_argument("--no-google", action="store_true", help="Nao atualiza Google Sheets.")
     parser.add_argument(
         "--repair-existing-types",
         action="store_true",
-        default=os.getenv("REPORTEI_TOP_POSTS_REPAIR_EXISTING_TYPES", "false").lower() == "true",
-        help="Converte linhas existentes da aba para data/numeros reais. Use apenas como reparo pontual.",
+        default=os.getenv("REPORTEI_TOP_POSTS_REPAIR_EXISTING_TYPES", "false").lower()
+        == "true",
+        help="Converte linhas existentes da aba para data/numeros reais.",
     )
     parser.add_argument(
         "--repair-types-only",
         action="store_true",
-        help="Apenas repara os tipos da aba existente, sem consultar a API do Reportei.",
+        help="Apenas repara os tipos da aba existente, sem consultar a API.",
     )
     parser.add_argument(
         "--cache-dir",
         default=os.getenv("REPORTEI_CACHE_DIR", DEFAULT_CACHE_DIR),
-        help="Pasta de cache.",
+        help="Mantido por compatibilidade; este script nao usa cache local.",
     )
     parser.add_argument(
         "--cache-ttl-hours",
         type=int,
         default=int(os.getenv("REPORTEI_CACHE_TTL_HOURS", DEFAULT_CACHE_TTL_HOURS)),
-        help="Validade do cache em horas.",
+        help="Mantido por compatibilidade.",
     )
     parser.add_argument(
         "--use-cache",
         action=argparse.BooleanOptionalAction,
         default=os.getenv("REPORTEI_USE_CACHE", "true").lower() != "false",
-        help="Usa cache persistente para projetos, integracoes e catalogo de metricas.",
+        help="Mantido por compatibilidade.",
     )
     parser.add_argument(
         "--refresh-cache",
         action="store_true",
-        help="Ignora cache existente e regrava com dados novos.",
+        help="Mantido por compatibilidade.",
     )
     return parser
+
+
+def parse_csv_values(raw_value):
+    return [item.strip() for item in str(raw_value or "").split(",") if item.strip()]
+
+
+def ordered_networks(networks_csv):
+    requested = parse_csv_values(networks_csv) or list(NETWORK_ORDER)
+    ordered = [slug for slug in NETWORK_ORDER if slug in requested]
+    ordered.extend(slug for slug in requested if slug not in ordered)
+    return ordered
 
 
 def normalize_date(date_text):
@@ -222,82 +300,6 @@ def resolve_period_dates(period, start_text, end_text, today=None):
     raise ValueError(f"Periodo invalido: {period}")
 
 
-def parse_csv_values(raw_value):
-    return [item.strip() for item in str(raw_value or "").split(",") if item.strip()]
-
-
-def ordered_networks(networks_csv):
-    requested = parse_csv_values(networks_csv) or list(NETWORK_ORDER)
-    ordered = [slug for slug in NETWORK_ORDER if slug in requested]
-    ordered.extend(slug for slug in requested if slug not in ordered)
-    return ordered
-
-
-def make_cache_config(args):
-    return {
-        "enabled": args.use_cache,
-        "refresh": args.refresh_cache,
-        "ttl_seconds": max(args.cache_ttl_hours, 0) * 3600,
-        "dir": Path(args.cache_dir),
-    }
-
-
-def cache_file_path(cache_config, key):
-    safe_key = re.sub(r"[^A-Za-z0-9_.-]+", "_", key)
-    return cache_config["dir"] / f"{safe_key}.json"
-
-
-def read_cache(cache_config, key, allow_expired=False):
-    if not cache_config["enabled"] or (cache_config["refresh"] and not allow_expired):
-        return None
-    path = cache_file_path(cache_config, key)
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    cached_at = payload.get("cached_at")
-    if not isinstance(cached_at, (int, float)):
-        return None
-    if (
-        not allow_expired
-        and cache_config["ttl_seconds"]
-        and time.time() - cached_at > cache_config["ttl_seconds"]
-    ):
-        return None
-    return payload.get("data")
-
-
-def write_cache(cache_config, key, data):
-    if not cache_config["enabled"]:
-        return
-    path = cache_file_path(cache_config, key)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "version": 1,
-        "cached_at": time.time(),
-        "data": data,
-    }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def cached_call(cache_config, key, loader):
-    cached = read_cache(cache_config, key)
-    if cached is not None:
-        return cached
-    try:
-        data = loader()
-    except Exception:
-        stale = read_cache(cache_config, key, allow_expired=True)
-        if stale is not None:
-            print(f"Usando cache expirado para {key} apos falha na API.")
-            return stale
-        raise
-    write_cache(cache_config, key, data)
-    return data
-
-
 def request_with_backoff(loader, label):
     last_error = None
     for attempt in range(1, RETRY_ATTEMPTS + 1):
@@ -309,16 +311,39 @@ def request_with_backoff(loader, label):
                 break
             message = str(exc)
             if "429" in message or "Too many requests" in message:
-                time.sleep(RATE_LIMIT_DELAY_SECONDS * attempt)
+                wait_seconds = RATE_LIMIT_DELAY_SECONDS * attempt
             else:
-                time.sleep(RETRY_DELAY_SECONDS * attempt)
-            print(f"{label}: tentativa {attempt + 1}/{RETRY_ATTEMPTS}.")
+                wait_seconds = RETRY_DELAY_SECONDS * attempt
+            print(f"{label}: tentativa {attempt + 1}/{RETRY_ATTEMPTS} em {wait_seconds}s.")
+            time.sleep(wait_seconds)
     raise last_error
 
 
+def get_client():
+    load_dotenv(SCRIPT_DIR / ".env")
+    token = os.getenv("REPORTEI_TOKEN")
+    return ReporteiClient(token, timeout=90)
+
+
+def list_all_pages(loader, label, per_page=100):
+    items = []
+    page = 1
+    while True:
+        response = request_with_backoff(
+            lambda page=page: loader(page, per_page),
+            f"{label} pagina {page}",
+        )
+        data = response.get("data", [])
+        items.extend(data)
+        if len(data) < per_page:
+            break
+        page += 1
+    return items
+
+
 def list_projects(client):
-    return request_with_backoff(
-        lambda: client.list_projects(per_page=100).get("data", []),
+    return list_all_pages(
+        lambda page, per_page: client.list_projects(page=page, per_page=per_page),
         "Projetos",
     )
 
@@ -339,8 +364,12 @@ def filter_projects(projects, project_names_csv, exclude_projects_csv):
 
 
 def get_integrations_by_slug(client, project_id):
-    integrations = request_with_backoff(
-        lambda: client.list_integrations(project_id=project_id, per_page=100).get("data", []),
+    integrations = list_all_pages(
+        lambda page, per_page: client.list_integrations(
+            page=page,
+            per_page=per_page,
+            project_id=project_id,
+        ),
         f"Integracoes projeto {project_id}",
     )
     return {
@@ -351,8 +380,12 @@ def get_integrations_by_slug(client, project_id):
 
 
 def get_metric_definitions_map(client, network_slug):
-    metrics = request_with_backoff(
-        lambda: client.list_metrics(network_slug, per_page=100).get("data", []),
+    metrics = list_all_pages(
+        lambda page, per_page: client.list_metrics(
+            network_slug,
+            page=page,
+            per_page=per_page,
+        ),
         f"Metricas {network_slug}",
     )
     return {
@@ -362,41 +395,17 @@ def get_metric_definitions_map(client, network_slug):
     }
 
 
-def prepare_metric_definition_for_request(metric_definition):
+def prepare_metric_definition_for_request(metric_definition, table_config):
     prepared = {
         key: value
         for key, value in metric_definition.items()
         if value not in (None, [], {})
     }
+    if table_config.get("metrics"):
+        prepared["metrics"] = table_config["metrics"]
     if isinstance(prepared.get("type"), str):
         prepared["type"] = [prepared["type"]]
     return prepared
-
-
-def get_client():
-    load_dotenv(SCRIPT_DIR / ".env")
-    token = os.getenv("REPORTEI_TOKEN")
-    return ReporteiClient(token, timeout=90)
-
-
-def cached_list_projects(client, cache_config):
-    return cached_call(cache_config, "projects", lambda: list_projects(client))
-
-
-def cached_get_integrations_by_slug(client, project_id, cache_config):
-    return cached_call(
-        cache_config,
-        f"integrations_{project_id}",
-        lambda: get_integrations_by_slug(client, project_id),
-    )
-
-
-def cached_get_metric_definitions_map(client, network_slug, cache_config):
-    return cached_call(
-        cache_config,
-        f"metrics_{network_slug}",
-        lambda: get_metric_definitions_map(client, network_slug),
-    )
 
 
 def to_number(value, default=0):
@@ -486,13 +495,11 @@ def valid_url(value):
     return ""
 
 
-def engagement_value(raw_row, metric_definition, table_config):
-    if table_config.get("engajamento"):
-        return row_metric_value(raw_row, metric_definition, table_config["engajamento"])
-    return sum(
-        row_metric_value(raw_row, metric_definition, metric_name)
-        for metric_name in table_config.get("engajamento_sum", [])
-    )
+def table_metric_value(raw_row, metric_definition, table_config, config_key):
+    metric_name = table_config.get(config_key)
+    if not metric_name:
+        return 0
+    return row_metric_value(raw_row, metric_definition, metric_name)
 
 
 def post_date_value(raw_row, metric_definition, table_config):
@@ -513,35 +520,6 @@ def extract_rows_from_datatable(payload):
     return []
 
 
-def fetch_post_table(client, integration_id, metric_definition, start_iso, end_iso):
-    prepared = prepare_metric_definition_for_request(metric_definition)
-    try:
-        response = request_with_backoff(
-            lambda: client.get_metrics_data(
-                start=start_iso,
-                end=end_iso,
-                integration_id=integration_id,
-                metrics=[prepared],
-            ),
-            prepared.get("reference_key", "Tabela de posts"),
-        )
-        payload = response.get("data", {}).get(prepared["id"], {})
-        return extract_rows_from_datatable(payload)
-    except Exception as exc:
-        print(
-            f"{prepared.get('reference_key', 'Tabela de posts')}: "
-            "consulta completa falhou; tentando por semanas."
-        )
-        return fetch_post_table_by_chunks(
-            client,
-            integration_id,
-            prepared,
-            start_iso,
-            end_iso,
-            exc,
-        )
-
-
 def iter_date_chunks(start_iso, end_iso, chunk_days=7):
     start_date = datetime.strptime(start_iso, "%Y-%m-%d").date()
     end_date = datetime.strptime(end_iso, "%Y-%m-%d").date()
@@ -552,7 +530,14 @@ def iter_date_chunks(start_iso, end_iso, chunk_days=7):
         current = chunk_end + timedelta(days=1)
 
 
-def fetch_post_table_by_chunks(client, integration_id, prepared_metric, start_iso, end_iso, original_error):
+def fetch_post_table_by_chunks(
+    client,
+    integration_id,
+    prepared_metric,
+    start_iso,
+    end_iso,
+    original_error,
+):
     rows = []
     for chunk_start, chunk_end in iter_date_chunks(start_iso, end_iso):
         try:
@@ -579,6 +564,34 @@ def fetch_post_table_by_chunks(client, integration_id, prepared_metric, start_is
     return rows
 
 
+def fetch_post_table(client, integration_id, prepared_metric, start_iso, end_iso):
+    try:
+        response = request_with_backoff(
+            lambda: client.get_metrics_data(
+                start=start_iso,
+                end=end_iso,
+                integration_id=integration_id,
+                metrics=[prepared_metric],
+            ),
+            prepared_metric.get("reference_key", "Tabela de posts"),
+        )
+        payload = response.get("data", {}).get(prepared_metric["id"], {})
+        return extract_rows_from_datatable(payload)
+    except Exception as exc:
+        print(
+            f"{prepared_metric.get('reference_key', 'Tabela de posts')}: "
+            "consulta completa falhou; tentando por semanas."
+        )
+        return fetch_post_table_by_chunks(
+            client,
+            integration_id,
+            prepared_metric,
+            start_iso,
+            end_iso,
+            exc,
+        )
+
+
 def make_post_row(project_name, network_slug, raw_row, metric_definition, table_config):
     dimension = row_dimension(raw_row)
     link = valid_url(dimension.get("url"))
@@ -593,22 +606,43 @@ def make_post_row(project_name, network_slug, raw_row, metric_definition, table_
     if to_number(visualizacoes) <= 0:
         return None
 
-    engajamento = engagement_value(raw_row, metric_definition, table_config)
-
     return {
         "Data": post_date_value(raw_row, metric_definition, table_config),
         "Produto": project_name,
         "Rede": NETWORKS.get(network_slug, network_slug),
         "Link": link,
         "Visualizacoes": format_metric(visualizacoes),
-        "Engajamento": format_metric(engajamento),
+        "Curtidas": format_metric(
+            table_metric_value(raw_row, metric_definition, table_config, "curtidas")
+        ),
+        "Comentarios": format_metric(
+            table_metric_value(raw_row, metric_definition, table_config, "comentarios")
+        ),
+        "Compartilhamentos": format_metric(
+            table_metric_value(
+                raw_row,
+                metric_definition,
+                table_config,
+                "compartilhamentos",
+            )
+        ),
+        "Salvos": format_metric(
+            table_metric_value(raw_row, metric_definition, table_config, "salvos")
+        ),
+        "Reposts": format_metric(
+            table_metric_value(raw_row, metric_definition, table_config, "reposts")
+        ),
     }
+
+
+def row_engagement_total(row):
+    return sum(to_number(row.get(field_name)) for field_name in RANKING_ENGAGEMENT_FIELDNAMES)
 
 
 def sort_key_for_ranking(row):
     return (
         -to_number(row["Visualizacoes"]),
-        -to_number(row["Engajamento"]),
+        -row_engagement_total(row),
         row["Data"],
         row["Link"].lower(),
     )
@@ -620,10 +654,7 @@ def apply_top_per_product_network(rows, top_per_product_network):
 
     grouped = {}
     for row in rows:
-        key = (
-            row["Produto"].strip().lower(),
-            row["Rede"].strip().lower(),
-        )
+        key = (row["Produto"].strip().lower(), row["Rede"].strip().lower())
         grouped.setdefault(key, []).append(row)
 
     limited_rows = []
@@ -634,9 +665,9 @@ def apply_top_per_product_network(rows, top_per_product_network):
     return limited_rows
 
 
-def build_rows(client, projects, networks, start_iso, end_iso, cache_config, top_per_product_network):
+def build_rows(client, projects, networks, start_iso, end_iso, top_per_product_network):
     metric_maps = {
-        network_slug: cached_get_metric_definitions_map(client, network_slug, cache_config)
+        network_slug: get_metric_definitions_map(client, network_slug)
         for network_slug in networks
         if network_slug in POST_TABLES
     }
@@ -651,7 +682,7 @@ def build_rows(client, projects, networks, start_iso, end_iso, cache_config, top
     block_index = 0
 
     for project in projects:
-        integrations = cached_get_integrations_by_slug(client, project["id"], cache_config)
+        integrations = get_integrations_by_slug(client, project["id"])
         for network_slug in networks:
             if network_slug not in POST_TABLES:
                 continue
@@ -669,12 +700,17 @@ def build_rows(client, projects, networks, start_iso, end_iso, cache_config, top
                 if not metric_definition:
                     print(f"{label}: metrica ausente {reference_key}.")
                     continue
+
+                request_metric_definition = prepare_metric_definition_for_request(
+                    metric_definition,
+                    table_config,
+                )
                 print(f"{label}: buscando {reference_key}.")
                 try:
                     raw_rows = fetch_post_table(
                         client,
                         integration["id"],
-                        metric_definition,
+                        request_metric_definition,
                         start_iso,
                         end_iso,
                     )
@@ -684,6 +720,7 @@ def build_rows(client, projects, networks, start_iso, end_iso, cache_config, top
                         f"Erro: {str(exc)[:500]}"
                     )
                     continue
+
                 for raw_row in raw_rows:
                     if not isinstance(raw_row, list):
                         continue
@@ -691,7 +728,7 @@ def build_rows(client, projects, networks, start_iso, end_iso, cache_config, top
                         project["name"],
                         network_slug,
                         raw_row,
-                        metric_definition,
+                        request_metric_definition,
                         table_config,
                     )
                     if not row:
@@ -702,7 +739,9 @@ def build_rows(client, projects, networks, start_iso, end_iso, cache_config, top
                         row["Link"].strip().lower(),
                     )
                     existing = rows_by_key.get(key)
-                    if not existing or to_number(row["Visualizacoes"]) > to_number(existing["Visualizacoes"]):
+                    if not existing or to_number(row["Visualizacoes"]) > to_number(
+                        existing["Visualizacoes"]
+                    ):
                         rows_by_key[key] = row
 
     limited_rows = apply_top_per_product_network(
@@ -810,14 +849,6 @@ def sheet_range(worksheet_name, cell_range):
     return f"'{escaped}'!{cell_range}"
 
 
-def clear_google_sheet_values(spreadsheets, spreadsheet_id, worksheet_name):
-    spreadsheets.values().clear(
-        spreadsheetId=spreadsheet_id,
-        range=sheet_range(worksheet_name, "A:F"),
-        body={},
-    ).execute()
-
-
 def sheet_values_to_rows(values):
     rows = []
     for row_number, values_row in enumerate(values[1:], start=2):
@@ -825,8 +856,6 @@ def sheet_values_to_rows(values):
         for index, field_name in enumerate(OUTPUT_FIELDNAMES):
             value = values_row[index] if index < len(values_row) else ""
             row[field_name] = value
-            if field_name == "Redes":
-                row["Rede"] = value
         if any(str(value).strip() for value in row.values()):
             row["_row_number"] = row_number
             rows.append(row)
@@ -836,7 +865,7 @@ def sheet_values_to_rows(values):
 def read_google_sheet_rows(spreadsheets, spreadsheet_id, worksheet_name):
     response = spreadsheets.values().get(
         spreadsheetId=spreadsheet_id,
-        range=sheet_range(worksheet_name, "A:F"),
+        range=sheet_range(worksheet_name, SHEET_COLUMN_RANGE),
     ).execute()
     values = response.get("values", [])
     if not values:
@@ -857,54 +886,28 @@ def sort_sheet_rows(rows):
     return sorted(rows, key=row_sort_tuple)
 
 
-def merge_historical_rows(existing_rows, new_rows, start_iso, end_iso):
-    rows_to_keep = [
-        row
-        for row in existing_rows
-        if not row_in_period(row, start_iso, end_iso)
-    ]
-    return sort_sheet_rows(rows_to_keep + new_rows)
-
-
-def rows_to_sheet_values(rows):
-    values = [OUTPUT_FIELDNAMES]
-    for row in rows:
-        values.append([sheet_cell_value(row, field_name) for field_name in OUTPUT_FIELDNAMES])
-    return values
-
-
 def row_to_sheet_values(row):
     return [sheet_cell_value(row, field_name) for field_name in OUTPUT_FIELDNAMES]
 
 
 def sheet_cell_value(row, field_name):
     value = row.get(field_name, "")
-    if field_name == "Redes":
-        return row.get("Redes", row.get("Rede", ""))
     if field_name == "Data":
         row_date = parse_sheet_date(value)
         if row_date is None:
             return value
         return (row_date - datetime(1899, 12, 30).date()).days
-    if field_name in ("Visualizacoes", "Engajamento"):
+    if field_name in NUMERIC_FIELDNAMES:
         return to_number(value)
     return value
 
 
-def remove_internal_fields(row):
-    cleaned = output_row(row)
-    cleaned["Rede"] = cleaned["Redes"]
-    return cleaned
-
-
 def output_row(row):
-    output = {}
-    for field_name in OUTPUT_FIELDNAMES:
-        if field_name == "Redes":
-            output[field_name] = row.get("Redes", row.get("Rede", ""))
-        else:
-            output[field_name] = row.get(field_name, "")
-    return output
+    return {field_name: row.get(field_name, "") for field_name in OUTPUT_FIELDNAMES}
+
+
+def remove_internal_fields(row):
+    return output_row(row)
 
 
 def group_contiguous_numbers(numbers):
@@ -935,10 +938,22 @@ def row_sort_tuple(row):
     return (
         parse_sheet_date(row.get("Data")) or datetime.max.date(),
         str(row.get("Produto", "")).lower(),
-        str(row.get("Rede", row.get("Redes", ""))).lower(),
+        str(row.get("Rede", "")).lower(),
         -to_number(row.get("Visualizacoes")),
-        -to_number(row.get("Engajamento")),
+        -row_engagement_total(row),
         str(row.get("Link", "")).lower(),
+    )
+
+
+def write_google_sheet_header(spreadsheets, spreadsheet_id, worksheet_name):
+    execute_google_request_with_backoff(
+        lambda: spreadsheets.values().update(
+            spreadsheetId=spreadsheet_id,
+            range=sheet_range(worksheet_name, "A1:J1"),
+            valueInputOption="USER_ENTERED",
+            body={"values": [OUTPUT_FIELDNAMES]},
+        ),
+        "Cabecalho Google Sheets",
     )
 
 
@@ -989,7 +1004,7 @@ def format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, row_count):
                     "startRowIndex": 1,
                     "endRowIndex": max(row_count, 2),
                     "startColumnIndex": 4,
-                    "endColumnIndex": 6,
+                    "endColumnIndex": len(OUTPUT_FIELDNAMES),
                 },
                 "cell": {
                     "userEnteredFormat": {
@@ -1083,7 +1098,10 @@ def insert_period_rows(spreadsheets, spreadsheet_id, worksheet_id, worksheet_nam
     execute_google_request_with_backoff(
         lambda: spreadsheets.values().update(
             spreadsheetId=spreadsheet_id,
-            range=sheet_range(worksheet_name, f"A{insert_row_number}:F{insert_row_number + row_count - 1}"),
+            range=sheet_range(
+                worksheet_name,
+                f"A{insert_row_number}:J{insert_row_number + row_count - 1}",
+            ),
             valueInputOption="USER_ENTERED",
             body={"values": [row_to_sheet_values(row) for row in rows]},
         ),
@@ -1098,13 +1116,10 @@ def repair_existing_sheet_types(spreadsheets, spreadsheet_id, worksheet_name):
     execute_google_request_with_backoff(
         lambda: spreadsheets.values().update(
             spreadsheetId=spreadsheet_id,
-            range=sheet_range(worksheet_name, f"A2:F{len(all_rows) + 1}"),
+            range=sheet_range(worksheet_name, f"A2:J{len(all_rows) + 1}"),
             valueInputOption="USER_ENTERED",
             body={
-                "values": [
-                    row_to_sheet_values(remove_internal_fields(row))
-                    for row in all_rows
-                ]
+                "values": [row_to_sheet_values(remove_internal_fields(row)) for row in all_rows]
             },
         ),
         "Reparo de tipos existentes no Google Sheets",
@@ -1128,12 +1143,9 @@ def write_google_sheet(
         worksheet_name,
         min_rows=len(rows) + 1,
     )
+    write_google_sheet_header(spreadsheets, spreadsheet_id, worksheet_name)
     existing_rows = read_google_sheet_rows(spreadsheets, spreadsheet_id, worksheet_name)
-    rows_to_keep = [
-        row
-        for row in existing_rows
-        if not row_in_period(row, start_iso, end_iso)
-    ]
+    rows_to_keep = [row for row in existing_rows if not row_in_period(row, start_iso, end_iso)]
     new_rows = sort_sheet_rows([remove_internal_fields(row) for row in rows])
     insert_row_number = find_insert_row_number(rows_to_keep, new_rows)
     replaced_count = delete_period_rows(
@@ -1173,16 +1185,9 @@ def write_google_sheet(
 
 def repair_types_only(spreadsheet_id, worksheet_name, service_account_file):
     spreadsheets = create_google_sheets_client(service_account_file)
-    worksheet_id = ensure_google_worksheet(
-        spreadsheets,
-        spreadsheet_id,
-        worksheet_name,
-    )
-    repaired_count = repair_existing_sheet_types(
-        spreadsheets,
-        spreadsheet_id,
-        worksheet_name,
-    )
+    worksheet_id = ensure_google_worksheet(spreadsheets, spreadsheet_id, worksheet_name)
+    write_google_sheet_header(spreadsheets, spreadsheet_id, worksheet_name)
+    repaired_count = repair_existing_sheet_types(spreadsheets, spreadsheet_id, worksheet_name)
     format_google_sheet(spreadsheets, spreadsheet_id, worksheet_id, repaired_count + 1)
     return repaired_count
 
@@ -1192,7 +1197,6 @@ def main():
     args = build_parser().parse_args()
     start_iso, end_iso = resolve_period_dates(args.period, args.start, args.end)
     networks = ordered_networks(args.networks)
-    cache_config = make_cache_config(args)
 
     if args.repair_types_only:
         repaired_count = repair_types_only(
@@ -1206,12 +1210,7 @@ def main():
         return
 
     client = get_client()
-
-    projects = filter_projects(
-        cached_list_projects(client, cache_config),
-        args.project_names,
-        args.exclude_projects,
-    )
+    projects = filter_projects(list_projects(client), args.project_names, args.exclude_projects)
     print(f"Periodo: {start_iso} ate {end_iso}")
     print(f"Projetos: {len(projects)}")
     print(f"Redes: {', '.join(NETWORKS.get(slug, slug) for slug in networks)}")
@@ -1222,7 +1221,6 @@ def main():
         networks,
         start_iso,
         end_iso,
-        cache_config,
         args.top_per_product_network,
     )
 
