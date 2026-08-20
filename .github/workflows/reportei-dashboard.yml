@@ -44,6 +44,7 @@ jobs:
       REPORTEI_DASHBOARD_MODE: update_values
       REPORTEI_DASHBOARD_NETWORKS: facebook,instagram_business,linkedin,tiktok,youtube
       REPORTEI_TOP_POSTS_NETWORKS: facebook,instagram_business
+      RUN_TOP_POSTS: "false"
       PYTHONIOENCODING: utf-8
 
     steps:
@@ -114,6 +115,7 @@ jobs:
           fi
 
       - name: Atualizar top posts
+        if: env.RUN_TOP_POSTS == 'true'
         shell: bash
         run: |
           if [ -n "${{ inputs.start }}" ] || [ -n "${{ inputs.end }}" ]; then
