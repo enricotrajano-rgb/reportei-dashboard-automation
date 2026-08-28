@@ -48,6 +48,7 @@ jobs:
       REPORTEI_TOP_POSTS_EXCLUDE_PROJECTS: Agro Agenda
       RUN_TOP_POSTS: "false"
       PYTHONIOENCODING: utf-8
+      TZ: America/Sao_Paulo
 
     steps:
       - name: Baixar codigo
@@ -87,12 +88,12 @@ jobs:
           for network in $network_list; do
             echo "::group::Atualizar rede: $network"
             if [ -n "${{ inputs.start }}" ] || [ -n "${{ inputs.end }}" ]; then
-              python "Exportação_Oficial.py" \
+              python export_reportei_dashboard.py \
                 --start "${{ inputs.start }}" \
                 --end "${{ inputs.end }}" \
                 --networks "$network"
             else
-              python "Exportação_Oficial.py" \
+              python export_reportei_dashboard.py \
                 --period "${{ inputs.period || 'current_month_until_yesterday' }}" \
                 --networks "$network"
             fi
@@ -138,3 +139,4 @@ jobs:
             reportei_dashboard_run_history.csv
             reportei_dashboard_block_history.csv
           if-no-files-found: ignore
+
