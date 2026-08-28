@@ -88,12 +88,12 @@ jobs:
           for network in $network_list; do
             echo "::group::Atualizar rede: $network"
             if [ -n "${{ inputs.start }}" ] || [ -n "${{ inputs.end }}" ]; then
-              python export_reportei_dashboard.py \
+              python "Exportação_Oficial.py" \
                 --start "${{ inputs.start }}" \
                 --end "${{ inputs.end }}" \
                 --networks "$network"
             else
-              python export_reportei_dashboard.py \
+              python "Exportação_Oficial.py" \
                 --period "${{ inputs.period || 'current_month_until_yesterday' }}" \
                 --networks "$network"
             fi
