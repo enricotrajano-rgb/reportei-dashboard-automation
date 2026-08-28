@@ -5,6 +5,7 @@ import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -28,6 +29,7 @@ DEFAULT_CACHE_DIR = ".reportei_cache"
 DEFAULT_CACHE_TTL_HOURS = 24
 DEFAULT_MODE = "update_values"
 DEFAULT_PERIOD = ""
+REPORTING_TIMEZONE = ZoneInfo("America/Sao_Paulo")
 DEFAULT_TOP_SLOW_BLOCKS = 10
 DEFAULT_RUN_HISTORY = str(SCRIPT_DIR / "reportei_dashboard_run_history.csv")
 DEFAULT_BLOCK_HISTORY = str(SCRIPT_DIR / "reportei_dashboard_block_history.csv")
@@ -402,7 +404,9 @@ def resolve_period_dates(period, start_text, end_text, today=None):
     if not period:
         return normalize_date(start_text), normalize_date(end_text)
 
-    today = today or datetime.now()
+    # O runner do GitHub usa UTC; o período da planilha deve seguir o calendário
+    # local de São Paulo para sempre fechar em ontem local.
+    today = today or datetime.now(REPORTING_TIMEZONE)
     today = datetime(today.year, today.month, today.day)
     yesterday = today - timedelta(days=1)
 
