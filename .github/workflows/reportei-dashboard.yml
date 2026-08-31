@@ -23,8 +23,8 @@ on:
         default: ""
 
   schedule:
-    # 09:30 UTC = 06:30 em Sao Paulo.
-    - cron: "30 9 * * *"
+    # 10:07 UTC = 07:07 em Sao Paulo. Minuto fora do pico reduz atrasos do schedule.
+    - cron: "7 10 * * *"
 
 concurrency:
   group: reportei-dashboard-update
