@@ -1,22 +1,38 @@
-# Atualizacao do Dashboard Reportei pelo GitHub Actions
+# Atualização do Dashboard Reportei pelo GitHub Actions
 
-Este projeto pode rodar fora do PC local usando GitHub Actions.
+Estado do arquivo local verificado em 25/08/2026.
 
-## O que ele faz
+## Atenção antes de executar
 
-- Roda `Exportação_Oficial.py` (o nome antigo permanece apenas como compatibilidade).
-- Atualiza a Google Sheet oficial na aba `Base`.
-- Usa o modo `update_values`, ou seja, atualiza somente as metricas nas colunas `D:G`.
-- Usa por padrao o periodo `current_month_until_yesterday`.
-- Tambem fica disponivel como botao manual em `Actions`.
+O workflow desta pasta chama diretamente `Exportação_Oficial.py`; `export_reportei_dashboard.py` permanece apenas como compatibilidade no GitHub.
 
-## Secrets obrigatorios
+Também há uma mudança importante em relação a versões anteriores deste documento: `RUN_TOP_POSTS` está atualmente como `false`, então Top Posts não roda no cron nem no disparo manual enquanto esse valor permanecer assim.
 
-No GitHub, abra o repositorio e va em:
+## Workflow
 
-`Settings -> Secrets and variables -> Actions -> New repository secret`
+Arquivo:
 
-Crie estes secrets:
+```text
+.github/workflows/reportei-dashboard.yml
+```
+
+Nome:
+
+```text
+Atualizar Dashboard Reportei
+```
+
+Agendamento:
+
+```text
+7 6 * * *
+```
+
+Com `timezone: America/Sao_Paulo`, isso corresponde a 06:07 no horário local. O minuto 07 foi escolhido para reduzir atrasos do GitHub em minutos de pico.
+
+## Secrets obrigatórios
+
+No repositório GitHub, em `Settings -> Secrets and variables -> Actions`, são esperados:
 
 ```text
 REPORTEI_TOKEN
@@ -24,51 +40,72 @@ GOOGLE_SERVICE_ACCOUNT_JSON
 GOOGLE_SPREADSHEET_ID
 ```
 
-`GOOGLE_SERVICE_ACCOUNT_JSON` deve ser o conteudo completo do arquivo JSON da service account.
+`GOOGLE_SERVICE_ACCOUNT_JSON` deve conter o JSON completo da service account. A planilha deve estar compartilhada com o `client_email` dessa conta como Editor.
 
-`GOOGLE_SPREADSHEET_ID` e o ID da planilha, por exemplo:
+## Configuração observada
 
-```text
-11hFk76IZe1AnCD3lsq6N95hclSZjIdgrkbmI0GWVCrI
-```
+- Python 3.11.
+- Timeout do job: 120 minutos.
+- Uma execução por vez, sem cancelamento da anterior.
+- Cache persistente em `.reportei_cache`.
+- Modo `update_values`.
+- Aba principal `Base`.
+- Redes: Facebook, Instagram, LinkedIn, TikTok e YouTube.
+- Projeto excluído: `Agro Agenda`.
+- Aba de Top Posts configurada como `Top Posts`, porém a etapa está desativada.
 
-## Rodar manualmente
+## Execução manual
 
-No GitHub:
+O `workflow_dispatch` aceita:
 
-1. Abra o repositorio.
-2. Clique em `Actions`.
-3. Clique em `Atualizar Dashboard Reportei`.
-4. Clique em `Run workflow`.
-5. Deixe `period` como `current_month_until_yesterday`.
-6. Clique no botao verde `Run workflow`.
+- `period`: `current_month_until_yesterday`, `previous_month`, `last_7_days` ou `last_30_days`;
+- `start` e `end`: intervalo fixo em `DD/MM/YYYY` ou `YYYY-MM-DD`.
 
-Para rodar um intervalo especifico, preencha `start` e `end`.
+Ao usar intervalo fixo, preencha as duas datas. Se qualquer uma estiver preenchida, o workflow passa ambas ao script; deixar a outra vazia deve causar erro de validação.
 
-## Rodar automaticamente
+## Comportamento por rede
 
-O workflow esta agendado para:
+O workflow chama o exportador uma vez para cada rede. Uma falha não impede automaticamente as redes seguintes.
 
-```text
-07:07 America/Sao_Paulo
-```
+- Se pelo menos uma rede tiver sucesso, o step termina com sucesso e registra avisos para as demais.
+- Se todas falharem, o step termina com erro.
 
-No arquivo do GitHub Actions isso aparece como:
+Por isso, um workflow verde pode representar atualização parcial. Revise os avisos `Rede ... falhou` no log ou implemente notificação estruturada antes de depender apenas da cor da run.
 
-```text
-7 7 * * *\n\n`timezone: America/Sao_Paulo`
-```
+## Top Posts
 
-porque o GitHub usa UTC; o minuto 07 foi escolhido fora do pico de carga.
-
-## Arquivo principal
+A etapa existe, mas só roda quando:
 
 ```text
-.github/workflows/reportei-dashboard.yml
+RUN_TOP_POSTS=true
 ```
 
-## Observacoes
+Antes de reativá-la, confirme:
 
-- Nao suba `.env` nem arquivos JSON de credenciais para o GitHub.
-- Os logs e historicos locais ficam ignorados pelo `.gitignore`.
-- Se a service account perder acesso a planilha, compartilhe a planilha novamente com o email da service account.
+1. que `Top_Posts.py` no repositório remoto é a versão esperada;
+2. que o Looker usa o schema atual de dez colunas;
+3. que a substituição do período foi testada em uma planilha não produtiva;
+4. que a falha de uma etapa de Top Posts deve ou não tornar a run inteira vermelha.
+
+## Artifacts
+
+O workflow publica, quando existirem:
+
+```text
+reportei_dashboard_run_history.csv
+reportei_dashboard_block_history.csv
+```
+
+O segundo CSV local possui linhas com uma coluna `erro` adicional que não aparece no cabeçalho original. Corrija/migre esse schema antes de usá-lo em análises automáticas.
+
+## Recuperação da automação
+
+1. Restaurar `export_reportei_dashboard.py` e `export_reportei_csv.py` do repositório canônico.
+2. Confirmar que o workflow remoto e o arquivo local são equivalentes.
+3. Executar verificação offline e um teste CSV de um dia/rede/produto.
+4. Testar escrita em uma planilha não produtiva.
+5. Confirmar a expansão de `A:C` da Base para o período atual.
+6. Retomar o cron e verificar todas as redes no primeiro run.
+
+Para o runbook completo, consulte `docs/OPERATIONS.md`.
+
