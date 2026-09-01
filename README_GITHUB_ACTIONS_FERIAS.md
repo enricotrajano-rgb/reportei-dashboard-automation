@@ -56,7 +56,7 @@ O workflow esta agendado para:
 No arquivo do GitHub Actions isso aparece como:
 
 ```text
-7 10 * * *
+7 7 * * *\n\n`timezone: America/Sao_Paulo`
 ```
 
 porque o GitHub usa UTC; o minuto 07 foi escolhido fora do pico de carga.
