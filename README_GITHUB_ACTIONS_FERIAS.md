@@ -4,7 +4,7 @@ Este projeto pode rodar fora do PC local usando GitHub Actions.
 
 ## O que ele faz
 
-- Roda `export_reportei_dashboard.py`.
+- Roda `Exportação_Oficial.py` (o nome antigo permanece apenas como compatibilidade).
 - Atualiza a Google Sheet oficial na aba `Base`.
 - Usa o modo `update_values`, ou seja, atualiza somente as metricas nas colunas `D:G`.
 - Usa por padrao o periodo `current_month_until_yesterday`.
@@ -50,16 +50,16 @@ Para rodar um intervalo especifico, preencha `start` e `end`.
 O workflow esta agendado para:
 
 ```text
-06:30 America/Sao_Paulo
+07:07 America/Sao_Paulo
 ```
 
 No arquivo do GitHub Actions isso aparece como:
 
 ```text
-30 9 * * *
+7 10 * * *
 ```
 
-porque o GitHub usa UTC.
+porque o GitHub usa UTC; o minuto 07 foi escolhido fora do pico de carga.
 
 ## Arquivo principal
 
