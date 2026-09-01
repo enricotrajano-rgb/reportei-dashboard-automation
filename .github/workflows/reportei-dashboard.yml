@@ -23,8 +23,8 @@ on:
         default: ""
 
   schedule:
-    # 07:07 em Sao Paulo. Minuto fora do pico reduz atrasos do schedule.
-    - cron: "7 7 * * *"
+    # 06:07 em Sao Paulo. Minuto fora do pico reduz atrasos do schedule.
+    - cron: "7 6 * * *"
       timezone: "America/Sao_Paulo"
 
 concurrency:
