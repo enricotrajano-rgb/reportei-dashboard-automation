@@ -28,7 +28,7 @@ Agendamento:
 7 9 * * *
 ```
 
-Isso corresponde a 06:07 no horário local (UTC-3). O minuto 07 foi escolhido para reduzir atrasos do GitHub em minutos de pico.
+O primeiro horário corresponde a 06:07 no horário local (UTC-3); há um fallback às 08:07. O minuto 07 foi escolhido para reduzir atrasos do GitHub em minutos de pico, e uma trava evita executar o exportador duas vezes no mesmo dia.
 
 ## Secrets obrigatórios
 
