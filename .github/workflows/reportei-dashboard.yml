@@ -25,7 +25,9 @@ on:
   schedule:
     # Tentativa principal: 09:07 UTC = 06:07 em Sao Paulo.
     - cron: "7 9 * * *"
-    # Fallback: 11:07 UTC = 08:07 em Sao Paulo.
+    # Fallback 1: 10:07 UTC = 07:07 em Sao Paulo.
+    - cron: "7 10 * * *"
+    # Fallback 2: 11:07 UTC = 08:07 em Sao Paulo.
     - cron: "7 11 * * *"
 
 concurrency:
