@@ -32,10 +32,6 @@ concurrency:
   group: reportei-dashboard-update
   cancel-in-progress: false
 
-permissions:
-  actions: read
-  contents: read
-
 jobs:
   update-dashboard:
     runs-on: ubuntu-latest
