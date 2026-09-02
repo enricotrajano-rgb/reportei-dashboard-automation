@@ -23,9 +23,9 @@ on:
         default: ""
 
   schedule:
-    # 06:07 em Sao Paulo. Minuto fora do pico reduz atrasos do schedule.
-    - cron: "7 6 * * *"
-      timezone: "America/Sao_Paulo"
+    # 09:07 UTC = 06:07 em Sao Paulo. Mantemos o formato cron UTC simples,
+    # que ja funcionava neste repositorio; o Python calcula o periodo no fuso local.
+    - cron: "7 9 * * *"
 
 concurrency:
   group: reportei-dashboard-update
