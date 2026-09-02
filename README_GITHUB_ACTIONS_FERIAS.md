@@ -25,10 +25,10 @@ Atualizar Dashboard Reportei
 Agendamento:
 
 ```text
-7 6 * * *
+7 9 * * *
 ```
 
-Com `timezone: America/Sao_Paulo`, isso corresponde a 06:07 no horário local. O minuto 07 foi escolhido para reduzir atrasos do GitHub em minutos de pico.
+Isso corresponde a 06:07 no horário local (UTC-3). O minuto 07 foi escolhido para reduzir atrasos do GitHub em minutos de pico.
 
 ## Secrets obrigatórios
 
