@@ -25,10 +25,10 @@ Atualizar Dashboard Reportei
 Agendamento:
 
 ```text
-7 9 * * *
+30 9 * * *
 ```
 
-Os horários correspondem a 06:07, 07:07 e 08:07 no horário local (UTC-3). O minuto 07 foi escolhido para reduzir atrasos do GitHub em minutos de pico, e uma trava evita executar o exportador duas vezes no mesmo dia.
+Esse horário corresponde a 06:30 em São Paulo (09:30 UTC). O workflow mantém um único disparo diário, como na configuração original.
 
 ## Secrets obrigatórios
 
