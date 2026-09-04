@@ -100,7 +100,7 @@ O segundo CSV local possui linhas com uma coluna `erro` adicional que não apare
 
 ## Recuperação da automação
 
-1. Restaurar `export_reportei_dashboard.py` e `export_reportei_csv.py` do repositório canônico.
+1. Confirmar que `Exportação_Oficial.py` está presente e que o wrapper compatível, se necessário, aponta para ele; `export_reportei_csv.py` está aposentado e não deve ser restaurado como dependência.
 2. Confirmar que o workflow remoto e o arquivo local são equivalentes.
 3. Executar verificação offline e um teste CSV de um dia/rede/produto.
 4. Testar escrita em uma planilha não produtiva.
