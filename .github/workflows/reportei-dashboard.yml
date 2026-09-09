@@ -23,8 +23,10 @@ on:
         default: ""
 
   schedule:
-    # 09:30 UTC = 06:30 em Sao Paulo.
-    - cron: "30 9 * * *"
+    # 03:30 UTC = 00:30 em Sao Paulo. Um unico disparo diario.
+    # Antecipado em 6h apos atrasos de 3h28 a 5h40 na criacao das runs.
+    # O periodo continua sendo o mes corrente ate ontem em America/Sao_Paulo.
+    - cron: "30 3 * * *"
 
 concurrency:
   group: reportei-dashboard-update
