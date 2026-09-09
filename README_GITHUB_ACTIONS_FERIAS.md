@@ -1,6 +1,6 @@
 # Atualização do Dashboard Reportei pelo GitHub Actions
 
-Estado do arquivo local verificado em 25/08/2026.
+Agendamento local e remoto revisado em 09/09/2026.
 
 ## Atenção antes de executar
 
@@ -25,10 +25,12 @@ Atualizar Dashboard Reportei
 Agendamento:
 
 ```text
-30 9 * * *
+30 3 * * *
 ```
 
-Esse horário corresponde a 06:30 em São Paulo (09:30 UTC). O workflow mantém um único disparo diário, como na configuração original.
+Esse horário corresponde a 00:30 em São Paulo (03:30 UTC), seis horas antes do cron anterior. O workflow mantém um único disparo diário. O minuto 30 evita o início da hora, que o GitHub documenta como um período de carga elevada; isso não elimina nem limita os atrasos.
+
+Em 05–08/09, as execuções já usavam o cron correto `30 9 * * *`, mas o GitHub só as criou entre 09:58 e 12:10 locais. Os processamentos terminaram poucos minutos depois. A antecipação é uma mitigação desse atraso anterior ao Python, ainda sujeita a validação real. Veja [evidências e critérios de validação](docs/SCHEDULING_2026-09-09.md).
 
 ## Secrets obrigatórios
 
