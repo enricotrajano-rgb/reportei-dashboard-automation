@@ -794,7 +794,10 @@ def cached_call(cache_config, key, loader):
 
 
 def cached_list_projects(client, cache_config):
-    return cached_call(cache_config, "projects", lambda: list_projects(client))
+    # Descubra novos produtos (como BR IN TV) mesmo com cache ainda valido.
+    # Preserve o cache como fallback e os TTLs das integracoes e catalogos.
+    projects_cache_config = {**cache_config, "refresh": True}
+    return cached_call(projects_cache_config, "projects", lambda: list_projects(client))
 
 
 def cached_get_integrations_by_slug(client, project_id, cache_config):
